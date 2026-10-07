@@ -1,0 +1,555 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Duo Dash — a 2-player co-op game</title>
+<style>
+  :root{
+    --bg-top:#1b1035;
+    --bg-bot:#3a1e5c;
+    --panel:#241243;
+    --panel-edge:#4a2a7a;
+    --ink:#f4eeff;
+    --sub:#c3b3e6;
+    --p1:#ff5d73;
+    --p1-dark:#c23c50;
+    --p2:#4fd8e0;
+    --p2-dark:#2a9aa2;
+    --gold:#ffd469;
+    --plate-off:#5a3d8a;
+    --plate-on:#ffd469;
+    --door:#8a5cff;
+    --exit:#6ef2a0;
+    font-family: 'Trebuchet MS', 'Segoe UI', sans-serif;
+  }
+  *{box-sizing:border-box;}
+  html,body{
+    margin:0; height:100%;
+    background: radial-gradient(circle at 50% -10%, var(--bg-bot), var(--bg-top) 70%);
+    color:var(--ink);
+    display:flex; align-items:center; justify-content:center;
+    overflow:hidden;
+  }
+  #wrap{
+    display:flex; flex-direction:column; align-items:center;
+    gap:14px; padding:20px;
+    width:100%;
+    max-width:980px;
+  }
+  h1{
+    margin:0; font-size:28px; letter-spacing:1px;
+    text-shadow: 0 3px 0 rgba(0,0,0,.35);
+  }
+  h1 span.a{color:var(--p1);}
+  h1 span.b{color:var(--p2);}
+  #hud{
+    width:100%;
+    display:flex; justify-content:space-between; align-items:center;
+    gap:12px; flex-wrap:wrap;
+  }
+  .badge{
+    display:flex; align-items:center; gap:8px;
+    background:var(--panel);
+    border:2px solid var(--panel-edge);
+    border-radius:10px;
+    padding:6px 12px;
+    font-size:14px;
+  }
+  .dot{width:12px;height:12px;border-radius:3px;}
+  .dot.p1{background:var(--p1);}
+  .dot.p2{background:var(--p2);}
+  #levelName{font-size:15px; color:var(--sub);}
+  #stage{
+    position:relative;
+    background:linear-gradient(#2a1750,#180c30);
+    border:3px solid var(--panel-edge);
+    border-radius:14px;
+    box-shadow: 0 20px 50px rgba(0,0,0,.5), inset 0 0 60px rgba(0,0,0,.35);
+    overflow:hidden;
+  }
+  canvas{display:block;}
+  #overlay{
+    position:absolute; inset:0;
+    background:rgba(15,7,30,.86);
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    text-align:center; gap:16px; padding:24px;
+  }
+  #overlay.hidden{display:none;}
+  #overlay h2{margin:0; font-size:26px;}
+  #overlay p{margin:0; color:var(--sub); max-width:520px; line-height:1.5; font-size:14.5px;}
+  .keyrow{display:flex; gap:26px; margin-top:4px; flex-wrap:wrap; justify-content:center;}
+  .keycol{
+    background:var(--panel); border:2px solid var(--panel-edge);
+    border-radius:10px; padding:10px 16px; font-size:13px; text-align:left;
+  }
+  .keycol b{display:block; margin-bottom:6px; font-size:14px;}
+  .keycol.p1 b{color:var(--p1);}
+  .keycol.p2 b{color:var(--p2);}
+  kbd{
+    display:inline-block; background:#3a2864; border:1px solid #6a4aa8;
+    border-radius:5px; padding:1px 7px; font-size:12px; margin:1px;
+  }
+  button{
+    font-family:inherit; font-size:15px; font-weight:bold;
+    background:var(--gold); color:#3a2200; border:none;
+    padding:10px 22px; border-radius:9px; cursor:pointer;
+    box-shadow: 0 4px 0 #b8892a;
+    transition: transform .05s;
+  }
+  button:active{transform:translateY(3px); box-shadow:0 1px 0 #b8892a;}
+  #footer{
+    color:var(--sub); font-size:12.5px; text-align:center; max-width:640px;
+  }
+  #footer kbd{font-size:11px;}
+  .flash{
+    position:absolute; left:50%; top:14px; transform:translateX(-50%);
+    background:var(--panel); border:2px solid var(--gold); color:var(--gold);
+    padding:6px 16px; border-radius:20px; font-size:13px; font-weight:bold;
+    opacity:0; pointer-events:none; transition:opacity .25s, top .25s;
+  }
+  .flash.show{opacity:1; top:22px;}
+</style>
+</head>
+<body>
+<div id="wrap">
+  <h1>Duo Dash <span class="a">●</span> co-op platformer <span class="b">●</span></h1>
+  <div id="hud">
+    <div class="badge"><span class="dot p1"></span> Player 1 — WASD</div>
+    <div id="levelName">Level 1</div>
+    <div class="badge"><span class="dot p2"></span> Player 2 — Arrow Keys</div>
+  </div>
+
+  <div id="stage">
+    <canvas id="game" width="900" height="500"></canvas>
+    <div class="flash" id="flash">Both plates active!</div>
+    <div id="overlay">
+      <h2 id="ovTitle">Duo Dash</h2>
+      <p id="ovText">
+        Two players, one screen, zero solo heroics. Step on glowing plates together
+        to open doors, use each other as platforms to reach high ledges, and both
+        of you must reach the green exit to clear a level.
+      </p>
+      <div class="keyrow">
+        <div class="keycol p1"><b>Player 1 (red)</b>
+          <kbd>A</kbd> left &nbsp; <kbd>D</kbd> right &nbsp; <kbd>W</kbd> jump
+        </div>
+        <div class="keycol p2"><b>Player 2 (cyan)</b>
+          <kbd>←</kbd> left &nbsp; <kbd>→</kbd> right &nbsp; <kbd>↑</kbd> jump
+        </div>
+      </div>
+      <button id="startBtn">Start Playing</button>
+    </div>
+  </div>
+  <div id="footer">Press <kbd>R</kbd> anytime to restart the current level. Jump on top of your partner to reach higher ground.</div>
+</div>
+
+<script>
+(function(){
+  const canvas = document.getElementById('game');
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+  const GRAVITY = 0.62;
+  const MOVE_SPEED = 3.6;
+  const JUMP_VEL = -12.4;
+  const FRICTION = 0.78;
+
+  // ---------- Level definitions ----------
+  // platform: {x,y,w,h}
+  // plate: {x,y,w,h, id}  -- pressure plate, activated when a player stands on it
+  // door: {x,y,w,h, needs:[plateIds]} -- solid until all needed plates active, then opens (removed)
+  // mover: {x,y,w,h, plateIds:[...], upY, downY, speed} -- moving platform, held up while ANY listed plate is active
+  // exit: {x,y,w,h}
+  // spawn1/spawn2: {x,y}
+
+  function level1(){
+    return {
+      name: "Level 1 — Together or not at all",
+      hint: "Both players must stand on their glowing plate at the same time to open the gate.",
+      spawn1:{x:60,y:400}, spawn2:{x:110,y:400},
+      platforms:[
+        {x:0,y:460,w:900,h:40},
+        {x:0,y:0,w:20,h:500},
+        {x:880,y:0,w:20,h:500},
+      ],
+      plates:[
+        {id:'a', x:150,y:436, w:60,h:14},
+        {id:'b', x:300,y:436, w:60,h:14},
+      ],
+      doors:[
+        {x:520,y:0,w:24,h:460, needs:['a','b'], unlocked:false},
+      ],
+      movers:[],
+      exit:{x:800,y:400,w:50,h:60}
+    };
+  }
+
+  function level2(){
+    return {
+      name: "Level 2 — Lift each other up",
+      hint: "One of you holds the ground switch to raise the lift while the other rides it up and jumps to the ledge. Then whoever's up top can hold the second switch, so the first player can send the lift back for their partner.",
+      spawn1:{x:50,y:400}, spawn2:{x:100,y:400},
+      platforms:[
+        {x:0,y:460,w:900,h:40},
+        {x:0,y:0,w:20,h:500},
+        {x:880,y:0,w:20,h:500},
+        {x:540,y:230,w:340,h:20},   // high ledge leading to exit
+      ],
+      plates:[
+        {id:'liftG', x:230,y:436, w:70,h:14},
+        {id:'liftT', x:560,y:206, w:70,h:14},
+      ],
+      doors:[],
+      movers:[
+        {id:'m1', plateIds:['liftG','liftT'], x:400,y:436,w:90,h:16, upY:230, downY:436, speed:3.2, y:436}
+      ],
+      exit:{x:770,y:170,w:50,h:60}
+    };
+  }
+
+  const LEVELS = [level1, level2];
+  let levelIndex = 0;
+  let level = null;
+
+  function makePlayer(spawn, color, dark, keyset){
+    return {
+      x:spawn.x, y:spawn.y, w:34, h:44,
+      vx:0, vy:0, onGround:false,
+      color, dark, keys:keyset,
+      won:false
+    };
+  }
+
+  const KEYS = {}; // key state
+  const P1KEYS = {left:'KeyA', right:'KeyD', up:'KeyW'};
+  const P2KEYS = {left:'ArrowLeft', right:'ArrowRight', up:'ArrowUp'};
+
+  let p1, p2;
+  let plateStates = {};
+  let flashTimer = 0;
+
+  function loadLevel(i){
+    level = LEVELS[i]();
+    p1 = makePlayer(level.spawn1, getCss('--p1'), getCss('--p1-dark'), P1KEYS);
+    p2 = makePlayer(level.spawn2, getCss('--p2'), getCss('--p2-dark'), P2KEYS);
+    plateStates = {};
+    level.plates.forEach(p => plateStates[p.id] = false);
+    level.movers.forEach(m => m.y = m.downY);
+    document.getElementById('levelName').textContent = level.name;
+  }
+
+  function getCss(varName){
+    return getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
+  }
+
+  function rectsOverlap(a,b){
+    return a.x < b.x+b.w && a.x+a.w > b.x && a.y < b.y+b.h && a.y+a.h > b.y;
+  }
+
+  function allSolids(){
+    const solids = level.platforms.slice();
+    level.movers.forEach(m => solids.push({x:m.x, y:m.y, w:m.w, h:m.h, isMover:true}));
+    level.doors.forEach(d => {
+      if(!d.unlocked && d.needs.every(id => plateStates[id])) d.unlocked = true;
+      if(!d.unlocked) solids.push({x:d.x,y:d.y,w:d.w,h:d.h, isDoor:true});
+    });
+    return solids;
+  }
+
+  function movePlayer(player, other, solids){
+    const k = player.keys;
+    // horizontal input
+    let ax = 0;
+    if(KEYS[k.left]) ax -= 1;
+    if(KEYS[k.right]) ax += 1;
+    player.vx += ax * 1.1;
+    player.vx *= FRICTION;
+    if(Math.abs(player.vx) < 0.03) player.vx = 0;
+    player.vx = Math.max(-MOVE_SPEED, Math.min(MOVE_SPEED, player.vx));
+
+    // jump
+    if(KEYS[k.up] && player.onGround){
+      player.vy = JUMP_VEL;
+      player.onGround = false;
+    }
+
+    // gravity
+    player.vy += GRAVITY;
+    if(player.vy > 16) player.vy = 16;
+
+    // treat other player as a solid platform (only landing on top)
+    const otherAsPlatform = {x:other.x, y:other.y, w:other.w, h:other.h, isOther:true};
+
+    // --- move X ---
+    player.x += player.vx;
+    checkCollisionX(player, solids);
+    checkCollisionX(player, [otherAsPlatform], true);
+    player.x = Math.max(0, Math.min(W - player.w, player.x));
+
+    // --- move Y ---
+    player.onGround = false;
+    const prevY = player.y;
+    const fallingThisFrame = player.vy;
+    player.y += player.vy;
+    checkCollisionY(player, solids);
+    checkStackOnOther(player, otherAsPlatform, prevY, fallingThisFrame);
+  }
+
+  function checkCollisionX(player, solids, softOther){
+    for(const s of solids){
+      if(rectsOverlap(player, s)){
+        if(softOther){
+          // only block horizontally if vertically overlapping substantially and not just grazing top
+          const verticalOverlap = Math.min(player.y+player.h, s.y+s.h) - Math.max(player.y, s.y);
+          if(verticalOverlap < 10) continue;
+        }
+        if(player.vx > 0) player.x = s.x - player.w;
+        else if(player.vx < 0) player.x = s.x + s.w;
+        player.vx = 0;
+      }
+    }
+  }
+
+  function checkCollisionY(player, solids){
+    for(const s of solids){
+      if(rectsOverlap(player, s)){
+        if(player.vy > 0){
+          player.y = s.y - player.h;
+          player.vy = 0;
+          player.onGround = true;
+          if(s.isMover) player._onMover = s;
+        } else if(player.vy < 0){
+          player.y = s.y + s.h;
+          player.vy = 0;
+        }
+      }
+    }
+  }
+
+  // Landing on top of the other player. Uses the player's position from
+  // *before* this frame's fall (prevY) rather than a thin feet-strip, so a
+  // fast fall can't tunnel past the detection zone between frames.
+  function checkStackOnOther(player, otherRect, prevY, vyThisFrame){
+    if(vyThisFrame < 0) return; // was moving upward, not landing on anyone
+    const wasAboveHead = (prevY + player.h) <= otherRect.y + 8; // small forgiveness margin
+    if(wasAboveHead && rectsOverlap(player, otherRect)){
+      player.y = otherRect.y - player.h;
+      player.vy = 0;
+      player.onGround = true;
+    }
+  }
+
+  function update(){
+    if(!level) return;
+    const solids = allSolids();
+
+    // move players; store previous mover-lock
+    p1._onMover = null; p2._onMover = null;
+    movePlayer(p1, p2, solids);
+    movePlayer(p2, p1, solids);
+
+    // fell off world -> respawn
+    [p1,p2].forEach((p, idx) => {
+      if(p.y > H + 100){
+        const s = idx===0?level.spawn1:level.spawn2;
+        p.x = s.x; p.y = s.y; p.vx=0; p.vy=0;
+      }
+    });
+
+    // update plate states
+    let anyChanged = false;
+    level.plates.forEach(plate => {
+      const active = rectsOverlap(p1, plate) || rectsOverlap(p2, plate);
+      if(active !== plateStates[plate.id]) anyChanged = true;
+      plateStates[plate.id] = active;
+    });
+
+    // update movers
+    level.movers.forEach(m => {
+      const held = m.plateIds.some(id => plateStates[id]);
+      const targetY = held ? m.upY : m.downY;
+      const dy = targetY - m.y;
+      const step = Math.sign(dy) * Math.min(Math.abs(dy), m.speed);
+      const prevY = m.y;
+      m.y += step;
+      // carry player if standing on it
+      [p1,p2].forEach(p => {
+        if(p._onMover === m || (p.onGround && Math.abs((p.y+p.h) - prevY) < 2 && p.x+p.w > m.x && p.x < m.x+m.w)){
+          p.y += step;
+        }
+      });
+    });
+
+    if(anyChanged){
+      const allOn = level.plates.length>0 && level.plates.every(pl => plateStates[pl.id]);
+      if(allOn) showFlash();
+    }
+
+    // check win
+    const p1in = rectsOverlap(p1, level.exit);
+    const p2in = rectsOverlap(p2, level.exit);
+    p1.won = p1in; p2.won = p2in;
+    if(p1in && p2in){
+      nextLevel();
+    }
+  }
+
+  function showFlash(){
+    const el = document.getElementById('flash');
+    el.classList.add('show');
+    clearTimeout(showFlash._t);
+    showFlash._t = setTimeout(()=>el.classList.remove('show'), 1200);
+  }
+
+  function nextLevel(){
+    levelIndex++;
+    if(levelIndex >= LEVELS.length){
+      showEnding();
+    } else {
+      loadLevel(levelIndex);
+      showLevelIntro();
+    }
+  }
+
+  function showLevelIntro(){
+    const ov = document.getElementById('overlay');
+    document.getElementById('ovTitle').textContent = level.name;
+    document.getElementById('ovText').textContent = level.hint;
+    document.getElementById('startBtn').textContent = "Go!";
+    ov.classList.remove('hidden');
+  }
+
+  function showEnding(){
+    const ov = document.getElementById('overlay');
+    document.getElementById('ovTitle').textContent = "You did it — together!";
+    document.getElementById('ovText').textContent = "Both of you cleared both levels. Press restart to play again from the top, solo bragging rights not included.";
+    document.getElementById('startBtn').textContent = "Play Again";
+    ov.classList.remove('hidden');
+    levelIndex = -1; // so start button restarts from 0
+  }
+
+  // ---------- Drawing ----------
+  function drawRoundRect(x,y,w,h,r){
+    ctx.beginPath();
+    ctx.moveTo(x+r,y);
+    ctx.arcTo(x+w,y,x+w,y+h,r);
+    ctx.arcTo(x+w,y+h,x,y+h,r);
+    ctx.arcTo(x,y+h,x,y,r);
+    ctx.arcTo(x,y,x+w,y,r);
+    ctx.closePath();
+  }
+
+  function draw(){
+    ctx.clearRect(0,0,W,H);
+    if(!level) return;
+
+    // background stripes
+    ctx.fillStyle = '#20123f';
+    ctx.fillRect(0,0,W,H);
+    ctx.fillStyle = 'rgba(255,255,255,0.02)';
+    for(let i=0;i<10;i++) ctx.fillRect(0, i*50, W, 25);
+
+    // platforms
+    level.platforms.forEach(p => {
+      ctx.fillStyle = '#513583';
+      drawRoundRect(p.x,p.y,p.w,p.h,6); ctx.fill();
+      ctx.fillStyle = '#6a49ab';
+      ctx.fillRect(p.x, p.y, p.w, 6);
+    });
+
+    // plates
+    level.plates.forEach(pl => {
+      const on = plateStates[pl.id];
+      ctx.fillStyle = on ? getCss('--plate-on') : getCss('--plate-off');
+      drawRoundRect(pl.x, pl.y+6, pl.w, pl.h-6, 5); ctx.fill();
+      if(on){
+        ctx.strokeStyle = 'rgba(255,212,105,.6)';
+        ctx.lineWidth = 3;
+        drawRoundRect(pl.x-3, pl.y+3, pl.w+6, pl.h, 7); ctx.stroke();
+      }
+    });
+
+    // movers
+    level.movers.forEach(m => {
+      const held = m.plateIds.some(id => plateStates[id]);
+      ctx.fillStyle = held ? '#ffd469' : '#8a6ac0';
+      drawRoundRect(m.x, m.y, m.w, m.h, 5); ctx.fill();
+    });
+
+    // doors
+    level.doors.forEach(d => {
+      if(!d.unlocked){
+        ctx.fillStyle = getCss('--door');
+        drawRoundRect(d.x,d.y,d.w,d.h,4); ctx.fill();
+        ctx.fillStyle = 'rgba(255,255,255,0.25)';
+        for(let yy=d.y+6; yy<d.y+d.h; yy+=12) ctx.fillRect(d.x+3, yy, d.w-6, 3);
+      }
+    });
+
+    // exit
+    const bothHere = p1.won && p2.won;
+    ctx.fillStyle = bothHere ? '#a6ffce' : getCss('--exit');
+    drawRoundRect(level.exit.x, level.exit.y, level.exit.w, level.exit.h, 8);
+    ctx.globalAlpha = 0.85; ctx.fill(); ctx.globalAlpha = 1;
+    ctx.strokeStyle = '#eafff2'; ctx.lineWidth = 2;
+    drawRoundRect(level.exit.x, level.exit.y, level.exit.w, level.exit.h, 8); ctx.stroke();
+
+    // players
+    drawPlayer(p1);
+    drawPlayer(p2);
+  }
+
+  function drawPlayer(p){
+    ctx.save();
+    ctx.translate(p.x + p.w/2, p.y + p.h/2);
+    // body
+    ctx.fillStyle = p.color;
+    drawRoundRect(-p.w/2, -p.h/2, p.w, p.h, 9);
+    ctx.fill();
+    ctx.fillStyle = p.dark;
+    drawRoundRect(-p.w/2, p.h/2-10, p.w, 10, 9);
+    ctx.fill();
+    // eyes
+    ctx.fillStyle = '#1b1030';
+    const dir = p.vx >= 0 ? 1 : -1;
+    ctx.beginPath(); ctx.arc(dir*5, -6, 3.4, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(dir*5-dir*10, -6, 3.4, 0, Math.PI*2); ctx.fill();
+    ctx.restore();
+
+    if(p.won){
+      ctx.fillStyle = '#ffd469';
+      ctx.font = 'bold 16px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('★', p.x + p.w/2, p.y - 10);
+    }
+  }
+
+  // ---------- Loop ----------
+  function loop(){
+    update();
+    draw();
+    requestAnimationFrame(loop);
+  }
+
+  // ---------- Input ----------
+  window.addEventListener('keydown', e => {
+    KEYS[e.code] = true;
+    if(['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Space'].includes(e.code)) e.preventDefault();
+    if(e.code === 'KeyR'){
+      loadLevel(Math.max(0,levelIndex));
+    }
+  });
+  window.addEventListener('keyup', e => { KEYS[e.code] = false; });
+
+  document.getElementById('startBtn').addEventListener('click', () => {
+    if(levelIndex === -1) levelIndex = 0;
+    loadLevel(levelIndex);
+    document.getElementById('overlay').classList.add('hidden');
+  });
+
+  // init
+  loadLevel(0);
+  loop();
+})();
+</script>
+</body>
+</html>
